@@ -1,0 +1,216 @@
+---
+title: "RNASeq Results"
+subtitle: "CHK2 Project (Muñoz-Maldonado et al.)"
+date: last-modified # display the date of the last edit
+author: 
+  - name: "Peter Degen"
+    orcid: 0009-0004-0706-9200
+    affiliation:
+      - name: "Center for Rerpoducible Science, University of Zurich"
+        city: "Zurich"
+format:
+  html:
+    toc: true # add a table of contents
+    toc-depth: 4 # show level 1-4 subheadings in the table of contents
+    code-fold: true
+    #df-print: paged # R only
+    df-print: kable # R only
+  # pdf: default # cannot render pdf with interactive html
+echo: false
+---
+
+## Run edgeR
+
+```{r}
+
+#' Run edgeR
+#'
+#' @param x: dataframe of counts
+#' @param design: design matrix, if "paired" constructs design matrix from data assuming x is of the form: k control cols followed by k treatment cols
+#' @param overwrite: logical, whether to overwrite existing results table if present
+#' @param filter_expr: logical, whether to remove low counts using edgeR's filterByExpr function
+#' @param top_tags: int or "Inf", store the results of the most significant genes only
+#' @param lfc: float, logFC threshold when testing for DE
+#' @param cols_to_keep: list of output table columns to save
+run_edgeR <- function(x,
+                      outfile,
+                      design,
+                      overwrite = FALSE,
+                      filter_expr = FALSE,
+                      top_tags = "Inf",
+                      verbose = FALSE,
+                      lfc = 0,
+                      cols_to_keep = "all",
+                      test = "qlf",
+                      meta_only = FALSE,
+                      check_gof = FALSE,
+                      N_control = 0,
+                      N_treat = 0,
+                      return_norm_factors = FALSE,
+                      save_rds=TRUE
+                      ) {
+  suppressPackageStartupMessages(require("edgeR"))
+  suppressPackageStartupMessages(require("limma"))
+
+  # Check if files already exist
+  if (!overwrite && file.exists(outfile)) {
+    print("Existing table not overwritten")
+    return()
+  }
+
+  if (design == "paired") {
+    if (ncol(x) %% 2 != 0) {
+      stop("Paired-design matrix must have even number of columns")
+    }
+    N <- ncol(x) / 2
+    patient <- factor(c(seq(N), seq(N)))
+    condition <- factor(c(rep("N", N), rep("T", N))) # normal vs tumor (control vs treatment)
+    design <- model.matrix(~ patient + condition)
+  } else if (design == "unpaired") {
+    if (ncol(x) %% 2 != 0) {
+      stop("Design matrix must have even number of columns")
+    }
+    N <- ncol(x) / 2
+    condition <- factor(c(rep("N", N), rep("T", N)))
+    design <- model.matrix(~condition)
+  } else if (design == "unpaired_asymmetric") {
+    if (N_control == 0) {
+      stop("Design matrix has no control columns")
+    }
+    if (N_treat == 0) {
+      stop("Design matrix has no treatment/condition columns")
+    }
+    condition <- factor(c(rep("N", N_control), rep("T", N_treat)))
+    design <- model.matrix(~condition)
+  } else if (grepl("\\.csv$", design, ignore.case = TRUE)) {
+    print("Constructing design matrix from df")
+    covariate_df <- read.csv(design)
+    if (!("Condition" %in% colnames(covariate_df))) {
+      stop("Error: 'Condition' column not found in dataframe")
+    }
+
+    covariate_df <- covariate_df %>%
+      mutate_if(is.character, as.factor)
+
+    # Relevel 'Condition' so that its first level is used as the reference
+    first_condition <- as.character(covariate_df$Condition[1])
+    print(paste("Reference condition:", first_condition))
+    covariate_df$Condition <- relevel(covariate_df$Condition, ref = first_condition)
+    other_vars <- setdiff(names(covariate_df), c("Condition", "X", "Sample"))
+    #print("Warning: hard-coded col names in design matrix")
+    formula <- as.formula(paste("~", paste(c(other_vars, "Condition"), collapse = " + ")))
+    print(paste("Formula:", formula))
+    design <- model.matrix(formula, data = covariate_df)
+    
+    # Ensure your count matrix and metadata align
+    if ("X" %in% names(covariate_df)) {
+      rownames(covariate_df) <- covariate_df$X
+    } else if ("Sample" %in% names(covariate_df)) {
+      rownames(covariate_df) <- covariate_df$Sample
+    } else {
+      stop("Sample names not found in covariate df")
+    }
+  }
+
+  if (verbose) {
+    rank <- qr(design)$rank
+    print(paste("Rank:", rank, "Cols:", ncol(design)))
+    print(design)
+  }
+
+  y <- DGEList(counts = x)
+
+  rownames(design) <- colnames(y)
+
+  if (filter_expr) {
+    keep <- filterByExpr(y, design = design)
+    y <- y[keep, , keep.lib.sizes = FALSE]
+  }
+
+  y <- calcNormFactors(y)
+
+  if (return_norm_factors) {
+    return(y$samples$norm.factors)
+  }
+  y <- estimateDisp(y, design, robust = TRUE)
+
+  if (meta_only) {
+    return(y)
+  }
+
+  if (test == "lrt") {
+    fit <- glmFit(y, design)
+  } else {
+    fit <- glmQLFit(y, design)
+  }
+
+  # Goodness-of-fit
+  if (check_gof) {
+    res.gof <- gof(fit, plot = FALSE)
+    file_name <- basename(outfile)
+    new_file_name <- paste0("gof.", file_name)
+    new_file_path <- file.path(dirname(outfile), new_file_name)
+    write.csv(res.gof$gof.pvalues, new_file_path)
+    print(paste("Saved gof in", new_file_path))
+  }
+
+  if (lfc > 0) {
+    result <- glmTreat(fit, lfc = lfc)
+  } else if (test == "lrt") {
+    result <- glmLRT(fit)
+  } else {
+    result <- glmQLFTest(fit)
+  } # omit coef (edgeR user's guide p. 39)
+
+  table <- topTags(result, n = top_tags) # adjust.method="BH"
+
+  if (any(cols_to_keep != "all")) {
+    if (typeof(cols_to_keep) == "list") cols_to_keep <- unlist(cols_to_keep)
+    table <- table[, cols_to_keep]
+  }
+  write.csv(table, outfile)
+  if (save_rds) {
+    saveRDS(list(result = result, y = y), file = gsub("\\.csv$", ".rds", outfile))
+  }
+}
+
+getwd()
+x <- read.csv("counts.csv", row.names=1)
+outfile <- "data/edger_table.csv"
+design <- "paired"
+run_edgeR(x,
+        outfile,
+        design,
+        overwrite = TRUE,
+        filter_expr = TRUE,
+        top_tags = "Inf",
+        verbose = FALSE,
+        lfc = 0,
+        cols_to_keep = "all",
+        test = "qlf",
+        meta_only = FALSE,
+        check_gof = FALSE,
+        N_control = 0,
+        N_treat = 0,
+        return_norm_factors = FALSE,
+        save_rds = FALSE
+        )
+
+res <- read.csv(outfile, row.names=1)
+print(paste0("Results saved in: ", outfile))
+
+sig <- res[res$FDR<0.01, ]
+nsig <- nrow(sig)
+nup <- nrow(sig[sig$logFC>0, ])
+ndown <- nrow(sig[sig$logFC<0, ])
+
+print(paste0("Significant genes:", nsig, " (up: ", nup, ", down: ", ndown, ")"))
+
+```
+
+## Session Info
+
+```{r}
+sessionInfo()
+```
+

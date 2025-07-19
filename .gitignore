@@ -177,3 +177,6 @@ data
 .config/*
 .local/*
 .bash_history
+
+analysis_files
+tmp

@@ -6,7 +6,7 @@ build_image:
 # creates container and mounts the current folder content into the container (home/rstudio) 
 run_container: build_image
 	docker run --rm -it -p 8787:8787 \
-	-e PASSWORD=dummy \
+	-e DISABLE_AUTH=true \
 	-e USERID=$(id -u) -e GROUPID=$(id -g) \
 	--name chk2_container \
 	-v $(CURDIR):/home/rstudio/chk2 \
