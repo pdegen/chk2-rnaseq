@@ -7,7 +7,7 @@ build_image:
 run_container: build_image
 	docker run --rm -it -p 8787:8787 \
 	-e DISABLE_AUTH=true \
-	-e USERID=$(id -u) -e GROUPID=$(id -g) \
+	--user $(id -u):$(id -g) \
 	--name chk2_container \
 	-v $(CURDIR):/home/rstudio/chk2 \
 	chk2_container

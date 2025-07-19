@@ -204,7 +204,7 @@ nsig <- nrow(sig)
 nup <- nrow(sig[sig$logFC>0, ])
 ndown <- nrow(sig[sig$logFC<0, ])
 
-print(paste0("Significant genes:", nsig, " (up: ", nup, ", down: ", ndown, ")"))
+print(paste0("Significant genes: ", nsig, " (up: ", nup, ", down: ", ndown, ")"))
 
 ```
 

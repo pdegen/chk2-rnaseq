@@ -8,6 +8,7 @@ RUN Rscript -e "BiocManager::install(version = '3.18')" && \
 
 RUN Rscript -e "remotes::install_version('dplyr', version = '1.1.4', repos = 'https://cloud.r-project.org')"
 
-# cannot chown /home/rstudio, will break running container, therefore make subdir
+#cannot chown /home/rstudio, will break running container, therefore make subdir
 RUN mkdir -p /home/rstudio/chk2 && \
     chown -R rstudio:rstudio /home/rstudio/chk2
+
