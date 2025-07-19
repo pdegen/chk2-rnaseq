@@ -22,7 +22,9 @@ echo: false
 ## Run edgeR
 
 ```{r}
-
+#| echo: true
+#| code-fold: true
+#| 
 #' Run edgeR
 #'
 #' @param x: dataframe of counts
@@ -46,16 +48,18 @@ run_edgeR <- function(x,
                       check_gof = FALSE,
                       N_control = 0,
                       N_treat = 0,
-                      return_norm_factors = FALSE,
-                      save_rds=TRUE
+                      return_norm_factors = FALSE
                       ) {
   suppressPackageStartupMessages(require("edgeR"))
   suppressPackageStartupMessages(require("limma"))
 
+  rds_file <- gsub("\\.csv$", ".rds", outfile)
+  
   # Check if files already exist
-  if (!overwrite && file.exists(outfile)) {
+  if (!overwrite && file.exists(outfile) && file.exists(rds_file)) {
     print("Existing table not overwritten")
-    return()
+    result <- readRDS(rds_file)
+    return(result)
   }
 
   if (design == "paired") {
@@ -169,43 +173,80 @@ run_edgeR <- function(x,
     table <- table[, cols_to_keep]
   }
   write.csv(table, outfile)
-  if (save_rds) {
-    saveRDS(list(result = result, y = y), file = gsub("\\.csv$", ".rds", outfile))
-  }
+  #result_y <- list(result = result, y = y)
+  result$y <- y
+  saveRDS(result, file = rds_file)
+  result
 }
 
-getwd()
-x <- read.csv("counts.csv", row.names=1)
+x <- read.csv("data/counts.csv", row.names=1)
 outfile <- "data/edger_table.csv"
 design <- "paired"
-run_edgeR(x,
-        outfile,
-        design,
-        overwrite = TRUE,
-        filter_expr = TRUE,
-        top_tags = "Inf",
-        verbose = FALSE,
-        lfc = 0,
-        cols_to_keep = "all",
-        test = "qlf",
-        meta_only = FALSE,
-        check_gof = FALSE,
-        N_control = 0,
-        N_treat = 0,
-        return_norm_factors = FALSE,
-        save_rds = FALSE
-        )
+result <- run_edgeR(x,
+                    outfile,
+                    design,
+                    overwrite = TRUE,
+                    filter_expr = TRUE,
+                    top_tags = "Inf",
+                    verbose = FALSE,
+                    lfc = 0,
+                    cols_to_keep = "all",
+                    test = "qlf",
+                    meta_only = FALSE,
+                    check_gof = FALSE,
+                    N_control = 0,
+                    N_treat = 0,
+                    return_norm_factors = FALSE
+                    )
 
-res <- read.csv(outfile, row.names=1)
-print(paste0("Results saved in: ", outfile))
-
-sig <- res[res$FDR<0.01, ]
+tab <- read.csv(outfile, row.names=1)
+sig <- tab[tab$FDR<0.01, ]
 nsig <- nrow(sig)
 nup <- nrow(sig[sig$logFC>0, ])
 ndown <- nrow(sig[sig$logFC<0, ])
 
+print(paste0("Results available in: ", outfile))
 print(paste0("Significant genes: ", nsig, " (up: ", nup, ", down: ", ndown, ")"))
 
+```
+## Figures
+
+### Mean-difference plot
+
+```{r}
+plotMD(result, p.value=0.05, adjust.method="BH", main="KO vs WT")
+```
+
+### MDS plot
+
+From edgeRR documentation:
+
+The function `plotMDS` draws a multi-dimensional scaling plot of the RNA samples in which distances correspond to leading log-fold-changes between each pair of RNA samples. The leading log-fold-change is the average (root-mean-square) of the largest absolute log-fold-changes between each pair of samples. This plot can be viewed as a type of unsupervised clustering. 
+
+```{r}
+plotMDS(result$y)
+```
+### Library sizes
+
+```{r}
+barplot(result$y$samples$lib.size*1e-6, names=rownames(result$y$samples), ylab="Library size (millions)")
+```
+### BCV plot
+
+```{r}
+plotBCV(result$y)
+```
+
+### DDR heatmap
+
+TO DO
+
+## Enrichment analysis
+
+TO DO
+
+```{r}
+goana
 ```
 
 ## Session Info
