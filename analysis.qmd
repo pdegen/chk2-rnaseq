@@ -19,6 +19,14 @@ format:
 echo: false
 ---
 
+##
+
+```{r}
+#| echo: true
+#| code-fold: false
+FDR_threshold <- 0.01
+```
+
 ## Run edgeR
 
 ```{r}
@@ -200,7 +208,7 @@ result <- run_edgeR(x,
                     )
 
 tab <- read.csv(outfile, row.names=1)
-sig <- tab[tab$FDR<0.01, ]
+sig <- tab[tab$FDR<FDR_threshold, ]
 nsig <- nrow(sig)
 nup <- nrow(sig[sig$logFC>0, ])
 ndown <- nrow(sig[sig$logFC<0, ])
@@ -214,7 +222,7 @@ print(paste0("Significant genes: ", nsig, " (up: ", nup, ", down: ", ndown, ")")
 ### Mean-difference plot
 
 ```{r}
-plotMD(result, p.value=0.05, adjust.method="BH", main="KO vs WT")
+plotMD(result, p.value=FDR_threshold, adjust.method="BH", main="KO vs WT")
 ```
 
 ### MDS plot
@@ -236,19 +244,171 @@ barplot(result$y$samples$lib.size*1e-6, names=rownames(result$y$samples), ylab="
 ```{r}
 plotBCV(result$y)
 ```
+### Gene symbols
+
+Our original data frame uses Ensemble gene identifiers (ENSG). Further below, we will also need gene symbols and Entrez identifiers. The identifiers were originally fetched using biomart, but here we will simply load a cached conversion table with all identifiers.
+
+```{r}
+library(dplyr)
+library(tibble)
+
+conv <- read.csv("data/conv_table.csv")
+if (!"Symbol" %in% colnames(tab)) {
+  tab <- tab %>%
+    rownames_to_column("ENSG") %>%
+    left_join(conv %>% select(ENSG, Symbol, Entrez), by = "ENSG") %>% 
+    select(ENSG, Symbol, Entrez, logFC, logCPM, F, PValue, FDR)
+}
+head(tab)
+```
 
 ### DDR heatmap
 
-TO DO
-
-## Enrichment analysis
-
-TO DO
+First, we fetch a cached list of DDR processes and associated terms (oiginally obtained from [https://www.mdanderson.org/documents/Labs/Wood-Laboratory/human-dna-repair-genes.html](https://www.mdanderson.org/documents/Labs/Wood-Laboratory/human-dna-repair-genes.html)).
 
 ```{r}
-goana
+#| echo: true
+#| code-fold: true
+
+library(httr)
+library(rvest)
+library(dplyr)
+library(stringr)
+
+get_tab_ddrle <- function(outfile) {
+  
+  if (file.exists(outfile)) {
+    print("Loading existing DDR table")
+    ddr_df <- read.csv(outfile, row.names=1)
+    return(ddr_df)
+  }
+  
+  # Fetch and parse HTML
+  url <- "https://www.mdanderson.org/documents/Labs/Wood-Laboratory/human-dna-repair-genes.html"
+  page <- GET(url)
+  html <- read_html(content(page, as = "text"))
+  
+  # Extract first table
+  tab_ddr <- html %>%
+    html_table(fill = TRUE) %>%
+    .[[1]] %>%
+    pull(1) %>%
+    as.character()
+  
+  # Preprocess entries
+  ddr_vec <- tab_ddr[3:(length(tab_ddr) - 1)]
+  ddr_list <- c()
+  for (d in ddr_vec) {
+    if (d == "Poly(ADP-ribose) polymerase (PARP) enzymes that bind to DNA") {
+      ddr_list <- c(ddr_list, d)
+      next
+    }
+    parts <- str_split(d, "\\(")[[1]]
+    parts <- str_replace(parts, "\\)", "")
+    parts <- str_trim(parts)
+    ddr_list <- c(ddr_list, parts)
+  }
+  
+  # Fix one special case
+  ddr_list <- ddr_list[ddr_list != "XLF, Cernunnos"]
+  ddr_list <- c(ddr_list, "XLF", "Cernunnos")
+  ddr_list <- ddr_list[!is.na(ddr_list) & ddr_list != "nan"]
+  
+  # Build named list
+  ddr_dict <- list()
+  key <- NULL
+  for (ddr in ddr_list) {
+    if (str_detect(ddr, " ")) {
+      key <- ddr
+      ddr_dict[[key]] <- character()
+    } else {
+      ddr_dict[[key]] <- c(ddr_dict[[key]], ddr)
+    }
+  }
+  
+  # Convert to data frame
+  ddr_df <- as.data.frame(do.call(rbind, lapply(ddr_dict, `length<-`, max(lengths(ddr_dict)))))
+  ddr_df <- t(ddr_df)
+  rownames(ddr_df) <- NULL
+  colnames(ddr_df) <- names(ddr_dict)
+  ddr_df <- as.data.frame(ddr_df)
+  write.csv(ddr_df, outfile)
+  ddr_df
+}
+
+ddr_df <- get_tab_ddrle("data/ddr.csv")
+head(ddr_df)
+```
+```{r}
+library(tidyr)
+
+ddr_long <- ddr_df %>%
+  mutate(row = row_number()) %>%
+  pivot_longer(-row, names_to = "DDR_Process", values_to = "Symbol") %>%
+  filter(!is.na(Symbol), Symbol != "") %>%
+  distinct(Symbol, DDR_Process)
+
+tab_ddr <- tab %>%
+  inner_join(ddr_long, by = "Symbol")
+
+sig_ddr <- tab_ddr[tab_ddr$FDR<FDR_threshold, ]
+nsig_ddr <- nrow(sig)
+nup_ddr <- nrow(sig_ddr[sig_ddr$logFC>0, ])
+ndown_ddr <- nrow(sig_ddr[sig_ddr$logFC<0, ])
+
+
+print(paste0("Significant DDR genes: ", nsig_ddr, " (up: ", nup_ddr, ", down: ", ndown_ddr, ")"))
+
+kable(sig_ddr)
 ```
 
+```{r}
+library(pheatmap)
+y <- result$y
+logCPM <- cpm(y, prior.count=2, log=TRUE)
+colnames(logCPM) <- c("CHK2 WT","CHK2 WT","CHK2 WT","CHK2 KO","CHK2 KO","CHK2 KO")#rownames(y$samples)
+sig_ddr_logCPM <- logCPM[rownames(logCPM) %in% sig_ddr$ENSG, ]
+rownames(sig_ddr_logCPM) <- sig_ddr$Symbol[match(rownames(sig_ddr_logCPM), sig_ddr$ENSG)]
+pheatmap(sig_ddr_logCPM,
+         scale = "row",         # z-score normalize each gene
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         fontsize_row = 8,
+         fontsize_col = 8,
+         angle_col = 0,
+         main = "DDR Gene Expression (logCPM z-score)")
+
+```
+
+## Overrepresentation analysis
+
+### Gene ontology
+
+```{r}
+FDR_thresh_ora <- 0.05
+entrez <- tab[match(row.names(result$table), tab$ENSG), ]$Entrez
+
+go <- goana(result, FDR=FDR_thresh_ora, geneid=entrez, species="Hs")
+
+go$FDR.Up <- p.adjust(go$P.Up, method = "BH")
+go$FDR.Down <- p.adjust(go$P.Down, method = "BH")
+
+print(nrow(go))
+print(nrow(go[go$FDR.Down<FDR_thresh_ora, ]))
+print(nrow(go[go$FDR.Up<FDR_thresh_ora, ]))
+```
+### KEGG
+
+```{r}
+kegg <- kegga(result, FDR=FDR_thresh_ora, geneid=entrez, species="Hs")
+
+kegg$FDR.Up <- p.adjust(kegg$P.Up, method = "BH")
+kegg$FDR.Down <- p.adjust(kegg$P.Down, method = "BH")
+
+print(nrow(kegg))
+print(nrow(kegg[kegg$FDR.Down<FDR_thresh_ora, ]))
+print(nrow(kegg[kegg$FDR.Up<FDR_thresh_ora, ]))
+```
 ## Session Info
 
 ```{r}
