@@ -1,10 +1,10 @@
 # Assemble software specified in the Dockerfile 
-build_image:
+build:
 	docker build -t chk2_container .
 
-# Depends on 'build_image' so running this recipe will also run 'build_image' 
+# Depends on 'build' so running this recipe will also run 'build_image' 
 # creates container and mounts the current folder content into the container (home/rstudio) 
-run_container: build_image
+run: build
 	docker run --rm -it -p 8787:8787 \
 	-e DISABLE_AUTH=true \
 	--user $(id -u):$(id -g) \

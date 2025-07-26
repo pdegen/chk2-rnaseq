@@ -13,8 +13,8 @@ format:
     toc: true # add a table of contents
     toc-depth: 4 # show level 1-4 subheadings in the table of contents
     code-fold: true
-    #df-print: paged # R only
-    df-print: kable # R only
+    df-print: paged # R only
+    #df-print: kable # R only
   # pdf: default # cannot render pdf with interactive html
 echo: false
 ---
@@ -229,7 +229,7 @@ plotMD(result, p.value=FDR_threshold, adjust.method="BH", main="KO vs WT")
 
 From edgeRR documentation:
 
-The function `plotMDS` draws a multi-dimensional scaling plot of the RNA samples in which distances correspond to leading log-fold-changes between each pair of RNA samples. The leading log-fold-change is the average (root-mean-square) of the largest absolute log-fold-changes between each pair of samples. This plot can be viewed as a type of unsupervised clustering. 
+"The function `plotMDS` draws a multi-dimensional scaling plot of the RNA samples in which distances correspond to leading log-fold-changes between each pair of RNA samples. The leading log-fold-change is the average (root-mean-square) of the largest absolute log-fold-changes between each pair of samples. This plot can be viewed as a type of unsupervised clustering."
 
 ```{r}
 plotMDS(result$y)
@@ -337,7 +337,6 @@ get_tab_ddrle <- function(outfile) {
 }
 
 ddr_df <- get_tab_ddrle("data/ddr.csv")
-head(ddr_df)
 ```
 ```{r}
 library(tidyr)
@@ -348,18 +347,20 @@ ddr_long <- ddr_df %>%
   filter(!is.na(Symbol), Symbol != "") %>%
   distinct(Symbol, DDR_Process)
 
-tab_ddr <- tab %>%
-  inner_join(ddr_long, by = "Symbol")
+tab$DDR_Process <- NULL
+tab <- tab %>%
+  left_join(ddr_long %>% select(Symbol, DDR_Process), by = "Symbol")
+
+tab_ddr <- subset(tab, !is.na(DDR_Process))
 
 sig_ddr <- tab_ddr[tab_ddr$FDR<FDR_threshold, ]
-nsig_ddr <- nrow(sig)
+nsig_ddr <- nrow(sig_ddr)
 nup_ddr <- nrow(sig_ddr[sig_ddr$logFC>0, ])
 ndown_ddr <- nrow(sig_ddr[sig_ddr$logFC<0, ])
 
-
 print(paste0("Significant DDR genes: ", nsig_ddr, " (up: ", nup_ddr, ", down: ", ndown_ddr, ")"))
 
-kable(sig_ddr)
+tab_ddr
 ```
 
 ```{r}
@@ -380,6 +381,15 @@ pheatmap(sig_ddr_logCPM,
 
 ```
 
+## Interacting genes
+
+```{r}
+interacting_genes <- c("VASP","TP53","CHEK2","ITPR1","PPP1R12A","MDM2",
+"BRCA1","CDC25C","PRKG1","MDC1","TP53BP1","ATM","RAP1GAP2","GTF2I")
+
+tab[tab$Symbol %in% interacting_genes, ]
+```
+
 ## Overrepresentation analysis
 
 ### Gene ontology
@@ -393,10 +403,13 @@ go <- goana(result, FDR=FDR_thresh_ora, geneid=entrez, species="Hs")
 go$FDR.Up <- p.adjust(go$P.Up, method = "BH")
 go$FDR.Down <- p.adjust(go$P.Down, method = "BH")
 
-print(nrow(go))
-print(nrow(go[go$FDR.Down<FDR_thresh_ora, ]))
-print(nrow(go[go$FDR.Up<FDR_thresh_ora, ]))
+go_sig_up <- go[go$FDR.Up<FDR_thresh_ora, ]
+go_sig_down <- go[go$FDR.Down<FDR_thresh_ora, ]
+
+print(paste0("GO terms tested: ", nrow(go) , " | Signficant Up: ", nrow(go_sig_up), ", Down: ", nrow(go_sig_down)))
+go[go$FDR.Down<FDR_thresh_ora | go$FDR.Up<FDR_thresh_ora, ]
 ```
+
 ### KEGG
 
 ```{r}
@@ -405,13 +418,44 @@ kegg <- kegga(result, FDR=FDR_thresh_ora, geneid=entrez, species="Hs")
 kegg$FDR.Up <- p.adjust(kegg$P.Up, method = "BH")
 kegg$FDR.Down <- p.adjust(kegg$P.Down, method = "BH")
 
-print(nrow(kegg))
-print(nrow(kegg[kegg$FDR.Down<FDR_thresh_ora, ]))
-print(nrow(kegg[kegg$FDR.Up<FDR_thresh_ora, ]))
+kegg_sig_up <- kegg[kegg$FDR.Up<FDR_thresh_ora, ]
+kegg_sig_down <- kegg[kegg$FDR.Down<FDR_thresh_ora, ]
+
+print(paste0("KEGG terms tested: ", nrow(kegg) , " | Signficant Up: ", nrow(kegg_sig_up), ", Down: ", nrow(kegg_sig_down)))
+kegg[kegg$FDR.Down<FDR_thresh_ora | kegg$FDR.Up<FDR_thresh_ora, ]
 ```
+
+```{r}
+# go2 <- read.csv("data/kegg.csv", row.names=1)
+# go2 <- read.csv("data/goana.csv", row.names=1)
+# print(nrow(go2))
+# 
+# print(nrow(go2[go2$FDR.Down<FDR_thresh_ora, ]))
+# print(nrow(go2[go2$FDR.Up<FDR_thresh_ora, ]))
+# print(nrow(go2[go2$P.Down<FDR_thresh_ora, ]))
+# print(nrow(go2[go2$P.Up<FDR_thresh_ora, ]))
+# 
+# setdiff <- setdiff(row.names(kegg), row.names(go2))
+# #setdiff(row.names(go), row.names(go2))
+# length(setdiff)
+```
+
+## Save results
+
+```{r}
+#| echo: true
+#| code-fold: false
+#| 
+write.csv(tab, "data/edgeR_table_annotated.csv")
+write.csv(go, "data/go_table.csv")
+write.csv(kegg, "data/kegg_table.csv")
+```
+
 ## Session Info
 
 ```{r}
+sink("session_info.txt")
 sessionInfo()
+sink()
 ```
 
