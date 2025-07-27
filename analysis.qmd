@@ -24,9 +24,9 @@ echo: false
 ```{r}
 #| echo: true
 #| code-fold: false
-FDR_threshold <- 0.01
+FDR_threshold <- 0.01  # differential expression analysis
+FDR_thresh_ora <- 0.05  # over-representation analysis
 ```
-
 ## Run edgeR
 
 ```{r}
@@ -113,7 +113,6 @@ run_edgeR <- function(x,
     formula <- as.formula(paste("~", paste(c(other_vars, "Condition"), collapse = " + ")))
     print(paste("Formula:", formula))
     design <- model.matrix(formula, data = covariate_df)
-    
     # Ensure your count matrix and metadata align
     if ("X" %in% names(covariate_df)) {
       rownames(covariate_df) <- covariate_df$X
@@ -131,7 +130,6 @@ run_edgeR <- function(x,
   }
 
   y <- DGEList(counts = x)
-
   rownames(design) <- colnames(y)
 
   if (filter_expr) {
@@ -187,8 +185,21 @@ run_edgeR <- function(x,
   result
 }
 
-x <- read.csv("data/counts.csv", row.names=1)
+# 2022 originaö analysis with manual pipeline
+x <- read.csv("data/raw_counts.csv", row.names=1)
 outfile <- "data/edger_table.csv"
+
+# 2025 re-analysis with nf-core
+# x <- read.table(file = "data/kallisto.merged.gene_counts.tsv", sep = '\t', header = TRUE)
+# row.names(x) <- x$gene_id
+# x$gene_id <- NULL
+# x$gene_name <- NULL
+# cols_WT <- grep("^Par", names(x), value = TRUE)
+# cols_KO <- grep("^KO", names(x), value = TRUE)
+# names(x)[names(x) %in% cols_WT] <- sub("^Par", "WT", cols_WT)
+# x <- x[, c(sub("^Par", "WT", cols_WT), cols_KO)]
+# outfile <- "data/edger_table_nfc.csv"
+
 design <- "paired"
 result <- run_edgeR(x,
                     outfile,
@@ -213,9 +224,8 @@ nsig <- nrow(sig)
 nup <- nrow(sig[sig$logFC>0, ])
 ndown <- nrow(sig[sig$logFC<0, ])
 
-print(paste0("Results available in: ", outfile))
-print(paste0("Significant genes: ", nsig, " (up: ", nup, ", down: ", ndown, ")"))
-
+cat("Results available in: ", outfile)
+cat("Significant genes: ", nsig, " (up: ", nup, ", down: ", ndown, ")")
 ```
 ## Figures
 
@@ -358,7 +368,7 @@ nsig_ddr <- nrow(sig_ddr)
 nup_ddr <- nrow(sig_ddr[sig_ddr$logFC>0, ])
 ndown_ddr <- nrow(sig_ddr[sig_ddr$logFC<0, ])
 
-print(paste0("Significant DDR genes: ", nsig_ddr, " (up: ", nup_ddr, ", down: ", ndown_ddr, ")"))
+cat("Significant DDR genes: ", nsig_ddr, " (up: ", nup_ddr, ", down: ", ndown_ddr, ")")
 
 tab_ddr
 ```
@@ -394,11 +404,12 @@ tab[tab$Symbol %in% interacting_genes, ]
 
 ### Gene ontology
 
+Gene ontology results obtained by running `goana` function from the edgeR package.  DEGs at 1% FDR are used as input. Significant GO terms are defined using a 5% FDR threshold.
+
 ```{r}
-FDR_thresh_ora <- 0.05
 entrez <- tab[match(row.names(result$table), tab$ENSG), ]$Entrez
 
-go <- goana(result, FDR=FDR_thresh_ora, geneid=entrez, species="Hs")
+go <- goana(result, FDR=FDR_threshold, geneid=entrez, species="Hs")  # use DE FDR threshold here
 
 go$FDR.Up <- p.adjust(go$P.Up, method = "BH")
 go$FDR.Down <- p.adjust(go$P.Down, method = "BH")
@@ -406,14 +417,34 @@ go$FDR.Down <- p.adjust(go$P.Down, method = "BH")
 go_sig_up <- go[go$FDR.Up<FDR_thresh_ora, ]
 go_sig_down <- go[go$FDR.Down<FDR_thresh_ora, ]
 
-print(paste0("GO terms tested: ", nrow(go) , " | Signficant Up: ", nrow(go_sig_up), ", Down: ", nrow(go_sig_down)))
-go[go$FDR.Down<FDR_thresh_ora | go$FDR.Up<FDR_thresh_ora, ]
+cat("GO terms tested: ", nrow(go) , " | Signficant Up: ", nrow(go_sig_up), ", Down: ", nrow(go_sig_down))
+go_sig <- go[go$FDR.Down<FDR_thresh_ora | go$FDR.Up<FDR_thresh_ora, ]
+#topGO(go, ont="BP", sort="up")
+go_sig
 ```
 
 ### KEGG
 
+KEGG results obtained by running `kegga` function from the edgeR package. DEGs at 1% FDR are used as input. Significant KEGG pathways are defined using a 5% FDR threshold.
+
+
 ```{r}
-kegg <- kegga(result, FDR=FDR_thresh_ora, geneid=entrez, species="Hs")
+#kegg <- kegga(result_flipped, FDR=FDR_threshold, geneid=entrez, species="Hs")
+kegg <- kegga(result, FDR=FDR_threshold, geneid=entrez, species="Hs")
+# For some reason, kegga doesn't return pathway names, so fill in from old results file
+if (file.exists("data/kegg.csv")) {
+  kegg_old <- read.csv("data/kegg.csv", row.names = 1)
+  
+  # Make sure row names match and 'Pathway' column exists in both
+  if ("Pathway" %in% colnames(kegg_old) && "Pathway" %in% colnames(kegg)) {
+    matching_rows <- intersect(rownames(kegg), rownames(kegg_old))
+    
+    # Replace empty or NA Pathway values in 'kegg' with those from 'kegg_old'
+    empty_or_na <- is.na(kegg[matching_rows, "Pathway"]) | kegg[matching_rows, "Pathway"] == ""
+    kegg[matching_rows[empty_or_na], "Pathway"] <- kegg_old[matching_rows[empty_or_na], "Pathway"]
+  }
+}
+
 
 kegg$FDR.Up <- p.adjust(kegg$P.Up, method = "BH")
 kegg$FDR.Down <- p.adjust(kegg$P.Down, method = "BH")
@@ -421,23 +452,101 @@ kegg$FDR.Down <- p.adjust(kegg$P.Down, method = "BH")
 kegg_sig_up <- kegg[kegg$FDR.Up<FDR_thresh_ora, ]
 kegg_sig_down <- kegg[kegg$FDR.Down<FDR_thresh_ora, ]
 
-print(paste0("KEGG terms tested: ", nrow(kegg) , " | Signficant Up: ", nrow(kegg_sig_up), ", Down: ", nrow(kegg_sig_down)))
-kegg[kegg$FDR.Down<FDR_thresh_ora | kegg$FDR.Up<FDR_thresh_ora, ]
+cat("KEGG terms tested: ", nrow(kegg) , " | Signficant Up: ", nrow(kegg_sig_up), ", Down: ", nrow(kegg_sig_down))
+kegg_sig <- kegg[kegg$FDR.Down<FDR_thresh_ora | kegg$FDR.Up<FDR_thresh_ora, ]
+#topKEGG(kegg)
+kegg_sig
 ```
 
+#### KEGG Term: DNA replication
+
+To make sure the signs are correct, let's inspect the edgeR table and raw gene counts for the downregulated KEGG pathway `hsa03030` (DNA replication):
+
 ```{r}
-# go2 <- read.csv("data/kegg.csv", row.names=1)
-# go2 <- read.csv("data/goana.csv", row.names=1)
-# print(nrow(go2))
-# 
-# print(nrow(go2[go2$FDR.Down<FDR_thresh_ora, ]))
-# print(nrow(go2[go2$FDR.Up<FDR_thresh_ora, ]))
-# print(nrow(go2[go2$P.Down<FDR_thresh_ora, ]))
-# print(nrow(go2[go2$P.Up<FDR_thresh_ora, ]))
-# 
-# setdiff <- setdiff(row.names(kegg), row.names(go2))
-# #setdiff(row.names(go), row.names(go2))
-# length(setdiff)
+hsa03030_genes <- c("10535","10714","1763","2237","23649","246243",
+"29935","3978","4171","4172","4173","4174","4175","4176","5111","54107",
+"5422","5424","5425","5426","5427","5557","5558","56655","57804","5981",
+"5982","5983","5984","5985","6117","6118","6119","6742","79621","84153")
+
+cat("Genes in pathway:", length(hsa03030_genes),"\n")
+tab_hs <- tab[tab$Entrez %in% hsa03030_genes, ]
+cat("Matched genes in pathway:", nrow(tab_hs), "/", length(hsa03030_genes),"\n")
+tab_hs_sig <- tab_hs[tab_hs$FDR<FDR_threshold, ]
+cat("Significant genes in pathway:", nrow(tab_hs_sig), "/", length(hsa03030_genes),"\n")
+tab_hs_sig
+x[tab_hs_sig$ENSG, ]
+```
+
+#### Comparison with 2022 KEGG results
+
+The original KEGG analysis from 2022 used a different version of KEGG with fewer pathways (347 instead of 367). Here a comparison of the new and old KEGG results:
+
+```{r}
+
+kegg_old <- read.csv("data/kegg.csv", row.names=1)
+FDR_thresh_ora <- 0.05
+
+kegg_old_sig_up <- kegg_old[kegg_old$FDR.Up<FDR_thresh_ora, ]
+kegg_old_sig_down <- kegg_old[kegg_old$FDR.Down<FDR_thresh_ora, ]
+
+cat("KEGG terms tested (2022): ", nrow(kegg_old) , " | Signficant Up: ", nrow(kegg_old_sig_up), ", Down: ", nrow(kegg_old_sig_down))
+kegg_sig_old <- kegg_old[kegg_old$FDR.Down<FDR_thresh_ora | kegg_old$FDR.Up<FDR_thresh_ora, ]
+
+```
+
+
+```{r}
+compare_row_names <- function(df1, df2, colname="", cats = c("df1", "df2")) {
+  
+  if (colname != "") {
+   r1 <- df1[[colname]] 
+   r2 <- df2[[colname]]
+  } else {
+    r1 <- rownames(df1)
+    r2 <- rownames(df2)
+  }
+  
+  # Intersection and union
+  intersection <- intersect(r1, r2)
+  union_set <- union(r1, r2)
+  sym_diff <- setdiff(union_set, intersection)
+
+  # Print sizes
+  cat("Intersection size:", length(intersection), "\n")
+  cat("Union size:", length(union_set), "\n")
+  cat("Symmetric difference size:", length(sym_diff), "\n\n")
+
+  # Symmetric difference table
+  sym_table <- data.frame(
+    RowName = sym_diff,
+    setNames(list(sym_diff %in% r1), paste0("In ", cats[[1]])),
+    setNames(list(sym_diff %in% r2), paste0("In ", cats[[2]]))
+  )
+
+  # Load VennDiagram library
+  if (!requireNamespace("VennDiagram", quietly = TRUE)) {
+    install.packages("VennDiagram")
+  }
+  library(VennDiagram)
+
+  # Plot Venn
+  grid.newpage()
+  draw.pairwise.venn(
+    area1 = length(r1),
+    area2 = length(r2),
+    cross.area = length(intersection),
+    category = cats,
+    fill = c("skyblue", "pink"),
+    alpha = c(0.5, 0.5),
+    cat.cex = 1.2,
+    cex = 1.2,
+    cat.pos = c(-20, 20)
+  )
+  
+  sym_table
+}
+
+compare_row_names(kegg_sig, kegg_sig_old, colname="Pathway", cats=c("New_2025", "Original_2022"))
 ```
 
 ## Save results
@@ -457,5 +566,6 @@ write.csv(kegg, "data/kegg_table.csv")
 sink("session_info.txt")
 sessionInfo()
 sink()
+sessionInfo()
 ```
 
