@@ -6,7 +6,7 @@ author:
   - name: "Peter Degen"
     orcid: 0009-0004-0706-9200
     affiliation:
-      - name: "Center for Rerpoducible Science, University of Zurich"
+      - name: "Center for Rerpoducible Science & Research Synthesis, University of Zurich"
         city: "Zurich"
 format:
   html:
@@ -16,7 +16,7 @@ format:
     df-print: paged # R only
     #df-print: kable # R only
   # pdf: default # cannot render pdf with interactive html
-echo: false
+echo: true
 ---
 
 ##
@@ -24,6 +24,7 @@ echo: false
 ```{r}
 #| echo: true
 #| code-fold: false
+
 FDR_threshold <- 0.01  # differential expression analysis
 FDR_thresh_ora <- 0.05  # over-representation analysis
 ```
@@ -186,7 +187,7 @@ run_edgeR <- function(x,
 }
 
 # 2022 originaö analysis with manual pipeline
-x <- read.csv("data/raw_counts.csv", row.names=1)
+x <- read.csv("data/GSE303774_raw_counts.csv", row.names=1)
 outfile <- "data/edger_table.csv"
 
 # 2025 re-analysis with nf-core
@@ -225,8 +226,13 @@ nup <- nrow(sig[sig$logFC>0, ])
 ndown <- nrow(sig[sig$logFC<0, ])
 
 cat("Results available in: ", outfile)
+```
+
+```{r}
+#| echo: false
 cat("Significant genes: ", nsig, " (up: ", nup, ", down: ", ndown, ")")
 ```
+
 ## Figures
 
 ### Mean-difference plot
