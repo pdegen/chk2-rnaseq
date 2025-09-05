@@ -6,14 +6,14 @@ To reproduce the analysis, you must first download the data from GEO, accession 
 
 ## Downstream analysis with Docker
 
-Assuming you have Make and Docker installed and saved the `counts.csv` matrix in `/data`:
+First, download and extract the `GSE303774_raw_counts.csv.gz` file from GEO into the `/data` directory. Then, assuming you have [Make](https://www.gnu.org/software/make/) and [Docker](https://www.docker.com/) installed:
 
-- Run `make run`
+- From this directory, run `make run`
 - Open the RStudio Server via [http://localhost:8787/](http://localhost:8787/)
 - Open `analysis.qmd`
 - Render the current document (via button or Ctrl+Shift+K)
 
-This will run edgeR using the `/data/GSE303774_raw_counts.csv.gz` matrix (obtained from GEO) and save the results table in `/data/edger_table.csv`. Quarto will render a `analysis.html` fill with additional figures. The output should show:
+This will run edgeR using the count matrix and save the results table in `/data/edger_table.csv`. Quarto will render a `analysis.html` fill with additional figures. The rendered document should show:
 
 > Significant genes: 2223 (up: 1054, down: 1169)
 

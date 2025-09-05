@@ -186,7 +186,7 @@ run_edgeR <- function(x,
   result
 }
 
-# 2022 originaö analysis with manual pipeline
+# 2022 original analysis with manual pipeline
 x <- read.csv("data/GSE303774_raw_counts.csv", row.names=1)
 outfile <- "data/edger_table.csv"
 
