@@ -1,5 +1,7 @@
 # CHK2
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17063542.svg)](https://doi.org/10.5281/zenodo.17063541)
+
 Code for reproducing the RNA-Seq analysis in Muñoz-Maldonado et al. (2025)
 
 To reproduce the analysis, you must first download the data from GEO, accession number [GSE303774](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE303774). You can either download the raw data to perform alignment and quantification or download the count matrix to perform downstream differential expression and enrichment analysis.
