@@ -12,10 +12,10 @@ First, download and extract the `GSE303774_raw_counts.csv.gz` file from GEO into
 
 - From this directory, run `make run`
 - Open the RStudio Server via [http://localhost:8787/](http://localhost:8787/)
-- Open `analysis.qmd`
+- Open `analysis.qmd` (a [Quarto](https://quarto.org/) file)
 - Render the current document (via button or Ctrl+Shift+K)
 
-This will run edgeR using the count matrix and save the results table in `/data/edger_table.csv`. Quarto will render a `analysis.html` fill with additional figures. The rendered document should show:
+This will run edgeR using the count matrix and save the results table in `/data/edger_table.csv`. Quarto will create an `analysis.html` file with additional figures. The rendered document should show:
 
 > Significant genes: 2223 (up: 1054, down: 1169)
 
